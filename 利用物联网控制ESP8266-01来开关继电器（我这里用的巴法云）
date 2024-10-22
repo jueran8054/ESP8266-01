@@ -1,0 +1,93 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>  // 引入ESP8266WiFi库，用于WiFi连接
+
+// 创建ESP8266WiFiMulti对象，用于管理WiFi连接
+ESP8266WiFiMulti wifiMulti;
+
+// 定义服务器地址和端口
+const char* host = "bemfa.com";  // 网络服务器地址
+
+//*******************需要更改部分**********************
+const int httpPort = 你在巴法云中的端口号;       // HTTP端口号
+
+//*******************需要更改部分**********************
+// WiFi连接信息
+const char* WiFi_SSID = "你的WIFI名";   // WiFi名称
+const char* WiFi_Password = "WIFI密码";  // WiFi密码
+//****************************************************
+
+// 创建WiFi客户端对象，用于与服务器通信
+WiFiClient client;
+
+//****************可能需要更改部分**********************
+// 定义继电器连接的引脚为GPIO0(D0)
+const int relayPin = 0;  
+//*****设置引脚具体要看继电器是高电平还是低电平，不确定的话0号和2号引脚可以挨个测试*****************
+
+bool relayState = false;  // 继电器的状态，false为关闭，true为打开
+
+void setup() {
+  Serial.begin(115200);  // 初始化串口通信，设置波特率为115200
+  WiFi.mode(WIFI_STA);   // 设置ESP8266为无线终端模式
+
+  wifiMulti.addAP(WiFi_SSID, WiFi_Password);  // 添加WiFi网络
+  Serial.println("Connecting to WiFi...");
+
+  // 尝试连接WiFi，直到成功
+  while (wifiMulti.run() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print(".");
+  }
+
+  // WiFi连接成功后将通过串口监视器输出连接成功信息
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(WiFi.SSID());  // 输出WiFi名称
+  Serial.print("IP address:\t");
+  Serial.println(WiFi.localIP());  // 输出IP地址
+
+  // 初始化继电器引脚为输出模式，并设置为关闭状态
+  pinMode(relayPin, OUTPUT);
+
+  //****************可能需要更改部分*********************
+  digitalWrite(relayPin, HIGH);  // 初始状态为关闭
+  //******这里的初始状态可能不一样，我这个是低电平的继电器，所有初始状态设置为高电平**********
+}
+
+void loop() {
+  // 检查与巴法云的连接状态，如果断开则重新连接
+  if (!client.connected()) {
+    Serial.println("Connection to Bemfa lost, reconnecting...");
+    while (!client.connected()) {
+      if (!client.connect(host, httpPort)) {
+        Serial.print(".");
+        delay(1000);  // 等待1秒再尝试连接
+      }
+    }
+    Serial.println("Reconnected to Bemfa");
+    //**************************需要更改部分*******************************
+    // 重新订阅主题
+    client.print("cmd=1&uid=你的密钥=主题名\r\n");
+    //********************************************************************
+  }
+
+  // 如果客户端有数据可读
+  if (client.available()) {
+    String line = client.readStringUntil('\n');
+    Serial.println(line);  // 将接收到的数据输出到串口
+    
+    //**************************可能需要更改部分*************************
+    // 检查接收到的数据是否包含"on"或"off"命令
+    if (line.indexOf("on") != -1) {
+      Serial.println("Received 'on' command");
+      relayState = true;  // 更新继电器状态为打开
+      digitalWrite(relayPin, LOW);  // 低电平打开继电器
+    } else if (line.indexOf("off") != -1) {
+      Serial.println("Received 'off' command");
+      relayState = false;  // 更新继电器状态为关闭
+      digitalWrite(relayPin, HIGH);  // 高电平关闭继电器
+      //******依然根据你的继电器来看，如果是高电平需要把LOW和HIGH换个位置****
+    }
+  }
+  delay(10);  // 短暂延迟，避免过快循环
+}
